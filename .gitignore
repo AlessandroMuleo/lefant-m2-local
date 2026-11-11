@@ -1,0 +1,13 @@
+# keys and home data, never commit these
+devices.json
+devices.backup.json
+tinytuya.json
+tuya-raw.json
+snapshot.json
+config.json
+rooms.json
+
+*.log
+__pycache__/
+*.pyc
+.venv/

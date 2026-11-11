@@ -1,0 +1,10 @@
+{
+  "_note": "Copy to config.json. Usually only web_pin is needed, the rest comes from devices.json.",
+  "device_name": "",
+  "device_id": "",
+  "local_key": "",
+  "ip": "",
+  "version": "",
+  "web_pin": "",
+  "dps": {}
+}
