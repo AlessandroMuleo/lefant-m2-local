@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lefant M2</title>
+<style>
+  :root { --bg:#0f1115; --card:#181b22; --line:#262a33; --txt:#e8eaf0; --mut:#8b92a1; --acc:#4fd1a5; --warn:#f5a524; --err:#f26d6d; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--txt); }
+  main { max-width:460px; margin:0 auto; padding:20px 16px 40px; }
+  h1 { font-size:18px; font-weight:600; margin:0 0 14px; letter-spacing:.2px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; margin-bottom:14px; }
+  .state { display:flex; justify-content:space-between; align-items:baseline; }
+  .state b { font-size:22px; font-weight:600; }
+  .batt { font-variant-numeric:tabular-nums; color:var(--acc); font-size:22px; font-weight:600; }
+  .meta { color:var(--mut); font-size:13px; margin-top:6px; }
+  .bar { height:6px; background:var(--line); border-radius:3px; margin-top:10px; overflow:hidden; }
+  .bar i { display:block; height:100%; background:var(--acc); width:0; transition:width .4s; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  button { font:inherit; color:var(--txt); background:#222632; border:1px solid var(--line); border-radius:10px; padding:14px 10px; cursor:pointer; }
+  button:active { transform:scale(.98); }
+  button.primary { background:var(--acc); color:#0b1a14; border-color:var(--acc); font-weight:600; }
+  label { display:block; color:var(--mut); font-size:13px; margin:0 0 6px; }
+  select { width:100%; font:inherit; color:var(--txt); background:#222632; border:1px solid var(--line); border-radius:10px; padding:11px; }
+  .row + .row { margin-top:12px; }
+  .pad { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; max-width:240px; margin:0 auto; }
+  .pad button { padding:12px 0; }
+  #msg { min-height:20px; font-size:13px; color:var(--mut); margin-top:4px; }
+  #msg.err { color:var(--err); }
+  details summary { color:var(--mut); font-size:13px; cursor:pointer; }
+  .cons { display:grid; grid-template-columns:1fr auto auto; gap:10px; align-items:center; margin-top:10px; }
+  .cons .bar { margin-top:4px; }
+  .cons button { padding:6px 10px; font-size:12px; }
+  .low i { background:var(--warn); }
+  pre { font-size:12px; color:var(--mut); white-space:pre-wrap; word-break:break-all; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Lefant M2</h1>
+
+  <section class="card">
+    <div class="state"><b id="stato">…</b><span class="batt" id="batt">–</span></div>
+    <div class="bar"><i id="battbar"></i></div>
+    <div class="meta" id="meta"></div>
+  </section>
+
+  <section class="card">
+    <div class="grid">
+      <button class="primary" data-act="start">Start</button>
+      <button data-act="pause">Pause</button>
+      <button data-act="dock">Dock</button>
+      <button data-act="locate">Find robot</button>
+    </div>
+    <div id="msg"></div>
+  </section>
+
+  <section class="card" id="roomcard" hidden>
+    <div class="row"><label>Clean rooms</label></div>
+    <div id="rooms" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:8px 0"></div>
+    <div class="row"><label for="times">Passes</label>
+      <select id="times"><option>1</option><option>2</option><option>3</option></select></div>
+    <button class="primary" id="roomgo" style="width:100%;margin-top:8px">Clean selected rooms</button>
+  </section>
+
+  <section class="card">
+    <div class="row"><label for="suction">Suction</label><select id="suction"></select></div>
+    <div class="row"><label for="mode">Mode</label><select id="mode"></select></div>
+    <div class="row"><label for="water">Water (mop)</label><select id="water"></select></div>
+    <div class="row" id="voicerow" hidden>
+      <label>Voice</label>
+      <div class="grid"><button data-voice="on">On</button><button data-voice="off">Off</button></div>
+    </div>
+    <div class="row" id="volrow" hidden>
+      <label for="vol">Volume <span id="volval"></span></label>
+      <input type="range" id="vol" style="width:100%">
+    </div>
+  </section>
+
+  <section class="card" id="conscard" hidden>
+    <label>Consumables</label>
+    <div id="cons"></div>
+  </section>
+
+  <section class="card" id="padcard" hidden>
+    <label>Manual drive</label>
+    <div class="pad">
+      <span></span><button data-dir="forward">▲</button><span></span>
+      <button data-dir="turn_left">◀</button><button data-dir="stop">■</button><button data-dir="turn_right">▶</button>
+      <span></span><button data-dir="backward">▼</button><span></span>
+    </div>
+  </section>
+
+  <section class="card">
+    <details><summary>Raw data</summary><pre id="raw"></pre></details>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+let pin = null;
+try { pin = localStorage.getItem("lefant_pin"); } catch (e) {}
+
+async function api(path, body) {
+  const opt = { method: body === undefined ? "GET" : "POST", headers: {} };
+  if (pin) opt.headers["X-PIN"] = pin;
+  if (body !== undefined) { opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(body); }
+  const r = await fetch(path, opt);
+  if (r.status === 401) {
+    pin = prompt("PIN");
+    try { localStorage.setItem("lefant_pin", pin); } catch (e) {}
+    return api(path, body);
+  }
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.detail || r.statusText);
+  return data;
+}
+
+let resettable = [];
+const PART_NAME = { edge_brush: "side brush", roll_brush: "main brush", filter: "filter" };
+
+function renderCons(c) {
+  const names = Object.keys(c);
+  $("conscard").hidden = names.length === 0;
+  const box = $("cons"); box.innerHTML = "";
+  names.forEach(n => {
+    const v = c[n], key = n; const label = PART_NAME[n] || n;
+    const row = document.createElement("div"); row.className = "cons" + (v < 15 ? " low" : "");
+    const left = document.createElement("div");
+    left.innerHTML = `<div>${label}</div><div class="bar"><i style="width:${v}%"></i></div>`;
+    const pct = document.createElement("span"); pct.textContent = v + "%";
+    row.append(left, pct);
+    if (resettable.includes(key)) {
+      const b = document.createElement("button"); b.textContent = "Replaced";
+      b.onclick = async () => {
+        if (!confirm(`Replaced the ${label}? The counter goes back to 100%.`)) return;
+        try { await api("/api/reset/" + key, {}); say("Reset: " + label); setTimeout(refresh, 1500); }
+        catch (e) { say(e.message, true); }
+      };
+      row.append(b);
+    } else row.append(document.createElement("span"));
+    box.appendChild(row);
+  });
+}
+
+function say(t, err) { $("msg").textContent = t; $("msg").className = err ? "err" : ""; }
+
+function fill(sel, values, current) {
+  sel.innerHTML = "";
+  values.forEach(v => { const o = document.createElement("option"); o.value = o.textContent = v; sel.appendChild(o); });
+  if (current != null) sel.value = current;
+  sel.closest(".row").hidden = values.length === 0;
+}
+
+async function refresh() {
+  try {
+    const s = await api("/api/status");
+    $("stato").textContent = s.state ?? "unknown";
+    const b = s.battery;
+    $("batt").textContent = b != null ? b + "%" : "–";
+    $("battbar").style.width = (b || 0) + "%";
+    const m = [];
+    if (s.clean_time_min != null) m.push(s.clean_time_min + " min");
+    if (s.clean_area_m2 != null) m.push(s.clean_area_m2 + " m²");
+    if (s.fault) m.push("fault: " + s.fault);
+    $("meta").textContent = m.join(" · ");
+    if (s.suction != null) $("suction").value = s.suction;
+    if (s.mode != null) $("mode").value = s.mode;
+    if (s.water != null) $("water").value = s.water;
+    if (s.volume != null) { $("vol").value = s.volume; $("volval").textContent = s.volume; }
+    renderCons(s.consumables || {});
+    $("raw").textContent = JSON.stringify(s.all_dps, null, 2);
+  } catch (e) { $("stato").textContent = "unreachable"; say(e.message, true); }
+}
+
+async function init() {
+  try {
+    const o = await api("/api/options");
+    fill($("suction"), o.suction);
+    fill($("mode"), o.modes);
+    fill($("water"), o.water);
+    $("padcard").hidden = o.directions.length === 0;
+    $("voicerow").hidden = !o.voice;
+    resettable = o.resettable || [];
+    if (o.volume) {
+      $("vol").min = o.volume.min; $("vol").max = o.volume.max;
+      $("volrow").hidden = false;
+    }
+  } catch (e) { say(e.message, true); }
+  refresh();
+  setInterval(refresh, 5000);
+}
+
+document.querySelectorAll("[data-act]").forEach(b => b.onclick = async () => {
+  say("…");
+  try { await api("/api/action/" + b.dataset.act, {}); say("Done"); setTimeout(refresh, 1500); }
+  catch (e) { say(e.message, true); }
+});
+document.querySelectorAll("[data-dir]").forEach(b => b.onclick = async () => {
+  try { await api("/api/move", { value: b.dataset.dir }); } catch (e) { say(e.message, true); }
+});
+$("suction").onchange = async e => { try { await api("/api/suction", { value: e.target.value }); say("Suction: " + e.target.value); } catch (x) { say(x.message, true); } };
+$("mode").onchange = async e => { try { await api("/api/mode", { value: e.target.value }); say("Mode: " + e.target.value); } catch (x) { say(x.message, true); } };
+
+$("water").onchange = async e => { try { await api("/api/water", { value: e.target.value }); say("Water: " + e.target.value); } catch (x) { say(x.message, true); } };
+document.querySelectorAll("[data-voice]").forEach(b => b.onclick = async () => {
+  try { await api("/api/voice", { value: b.dataset.voice }); say("Voice " + b.dataset.voice); } catch (e) { say(e.message, true); }
+});
+$("vol").oninput = e => { $("volval").textContent = e.target.value; };
+$("vol").onchange = async e => { try { await api("/api/volume", { value: e.target.value }); say("Volume: " + e.target.value); } catch (x) { say(x.message, true); } };
+
+init();
+
+async function loadRooms() {
+  try {
+    const r = await api("/api/rooms");
+    if (!Array.isArray(r) || !r.length) return;
+    $("rooms").innerHTML = r.map(x =>
+      `<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" value="${x.app_name}"> ${x.name}</label>`).join("");
+    $("roomcard").hidden = false;
+  } catch (e) {}
+}
+$("roomgo").onclick = async () => {
+  const sel = [...document.querySelectorAll("#rooms input:checked")].map(i => i.value);
+  if (!sel.length) return say("Pick at least one room", true);
+  try {
+    const r = await api("/api/rooms/clean", { rooms: sel, times: +$("times").value });
+    say("Cleaning: " + r.rooms.join(", ") + " × " + r.passes); setTimeout(refresh, 2000);
+  } catch (e) { say(e.message, true); }
+};
+loadRooms();
+</script>
+</body>
+</html>
