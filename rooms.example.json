@@ -1,0 +1,10 @@
+{
+  "note": "Copy to rooms.json. Keys are the room names in the Smart Life app, id is what the robot uses. On my M2 Room1 was id 5, Room2 id 6 and so on. tools/room_test.py helps check them.",
+  "rooms": {
+    "Room1": {"id": 5, "name": "bathroom", "aliases": []},
+    "Room2": {"id": 6, "name": "living room", "aliases": ["lounge"]},
+    "Room3": {"id": 7, "name": "hallway", "aliases": ["entrance"]},
+    "Room4": {"id": 8, "name": "bedroom", "aliases": ["my room"]},
+    "Room5": {"id": 9, "name": "kitchen", "aliases": []}
+  }
+}
